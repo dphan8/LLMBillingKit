@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:openai.com)",
+      "WebFetch(domain:ai.google.dev)",
+      "WebFetch(domain:docs.mistral.ai)",
+      "WebFetch(domain:mistral.ai)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(py:*)",
+      "Bash(PYTHONPATH=. python -m pytest LLMBillingKit/tests/ -v)",
+      "Bash(pytest:*)",
+      "Bash(cmd.exe /c \"pip install -e .[dev]\")"
+    ]
+  }
+}
