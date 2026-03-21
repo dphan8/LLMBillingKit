@@ -1,23 +1,44 @@
 # LLMBillingKit
-**The Universal Open Source Signal-Based Billing Engine for LLM Applications.**
 
-[![License: Apache 2.0](https://img.shields.io)](https://opensource.org)
-[![Status: Alpha](https://img.shields.io)](#)
+Track net margin on every LLM API call. Local-first, zero-config.
 
-Traditional billing counts tokens. Modern AI startups bill on **outcomes**. 
-LLMBillingKit allows you to track real-time margins by mapping LLM costs directly to business "signals" like *successful resolutions*, *emails sent*, or *agents deployed*.
+## Install
 
----
-
-## Features
-- **Signal-Based Tracking:** Don't just track tokens; track what actually brings value to your customers.
-- **Real-Time Margin Monitoring:** Instantly see `Revenue - LLM Cost = Margin` for every request.
-- **Multi-Provider Support:** Built-in adapters for OpenAI, Anthropic, and LangChain.
-- **Developer-First SDK:** Integrate with 5 lines of code.
-- **Self-Hostable:** Ownership of your usage data for privacy and compliance.
-
-## Quick Start (1-Minute Setup)
-
-### 1. Installation
 ```bash
 pip install LLMBillingKit
+```
+
+## Quick Start
+
+```python
+import LLMBillingKit
+
+# After any OpenAI / Anthropic API call:
+result = LLMBillingKit.track(response, charged=0.03, customer="acme")
+print(result["margin"])  # revenue minus actual LLM cost
+```
+
+`track()` extracts model, token counts, and request ID from the response object,
+looks up per-token costs, computes actual cost and margin, and logs everything to
+a local SQLite database (`~/.LLMBillingKit/usage.db`).
+
+## CLI
+
+```bash
+llmbilling report              # margin by customer
+llmbilling report --days 7     # last 7 days
+llmbilling models              # margin by model
+llmbilling export              # CSV to stdout
+llmbilling export --format json
+```
+
+## Supported Models
+
+OpenAI (gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, o1, o1-mini, o3, o3-mini, o4-mini),
+Anthropic (claude-sonnet-4-20250514, claude-3-5-sonnet, claude-3-5-haiku, claude-3-haiku),
+Google (gemini-2.0-flash, gemini-2.5-pro, gemini-2.5-flash),
+Mistral (mistral-large-latest, mistral-small-latest).
+
+## License
+
+MIT

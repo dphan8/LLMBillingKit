@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "LLMBillingKit"
+version = "0.1.0"
+description = "Track net margin on every LLM API call"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = [
+    "click",
+    "tabulate",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+llmbilling = "LLMBillingKit.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["LLMBillingKit*"]
+
+[tool.setuptools.package-data]
+LLMBillingKit = ["costs.json"]
