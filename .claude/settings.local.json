@@ -11,7 +11,10 @@
       "Bash(py:*)",
       "Bash(PYTHONPATH=. python -m pytest LLMBillingKit/tests/ -v)",
       "Bash(pytest:*)",
-      "Bash(cmd.exe /c \"pip install -e .[dev]\")"
+      "Bash(cmd.exe /c \"pip install -e .[dev]\")",
+      "Bash(mkdir -p ~/.claude/channels/telegram)",
+      "Read(//Users/davidphan/.claude/channels/**)",
+      "Bash(chmod 600 ~/.claude/channels/telegram/.env)"
     ]
   }
 }
