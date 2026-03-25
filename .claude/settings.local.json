@@ -11,7 +11,10 @@
       "Bash(py:*)",
       "Bash(PYTHONPATH=. python -m pytest LLMBillingKit/tests/ -v)",
       "Bash(pytest:*)",
-      "Bash(cmd.exe /c \"pip install -e .[dev]\")"
+      "Bash(cmd.exe /c \"pip install -e .[dev]\")",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)"
     ]
   }
 }
