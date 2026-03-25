@@ -40,6 +40,17 @@ def test_track_anthropic(mock_insert):
 
 
 @patch("LLMBillingKit.tracker.insert_event")
+def test_track_versioned_openai_model(mock_insert):
+    resp = _mock_response(model="gpt-4o-mini-2024-07-18")
+    result = track(resp, charged=0.01)
+    assert result is not None
+    assert result["model"] == "gpt-4o-mini-2024-07-18"
+    expected_cost = 100 * 0.00000015 + 50 * 0.0000006
+    assert abs(result["actual_cost"] - expected_cost) < 1e-12
+    mock_insert.assert_called_once()
+
+
+@patch("LLMBillingKit.tracker.insert_event")
 def test_track_missing_usage(mock_insert):
     resp = SimpleNamespace(model="gpt-4o", id="resp-2")
     result = track(resp, charged=0.01)
