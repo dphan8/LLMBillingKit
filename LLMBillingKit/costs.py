@@ -18,4 +18,10 @@ def get_cost(model: str) -> dict | None:
     val = _load().get(model)
     if not isinstance(val, dict):
         return None
+    inp = val.get("input")
+    out = val.get("output")
+    if not isinstance(inp, (int, float)) or isinstance(inp, bool):
+        return None
+    if not isinstance(out, (int, float)) or isinstance(out, bool):
+        return None
     return val
