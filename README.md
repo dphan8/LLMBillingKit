@@ -12,7 +12,7 @@ pip install llmbillingkit
 
 ```python
 from openai import OpenAI
-from llmbillingkit import track
+from LLMBillingKit import track
 
 client = OpenAI()
 response = client.chat.completions.create(
@@ -75,7 +75,7 @@ Everything is stored locally in SQLite at `~/.llmbillingkit/usage.db`. No server
 
 **Mistral:** mistral-large-latest, mistral-small-latest
 
-Unknown models are still tracked — you'll see revenue and token counts, just not cost or margin. A warning tells you which model is missing.
+Unknown models are not tracked — `track()` returns `None` when a model is missing from the pricing table.
 
 ## CLI reference
 
