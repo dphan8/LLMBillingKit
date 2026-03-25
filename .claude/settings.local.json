@@ -16,12 +16,8 @@
       "Bash(gh pr view:*)",
       "Bash(gh pr diff:*)",
       "Bash(git push:*)",
-      "Bash(gh api:*)"
-      "Bash(mkdir -p ~/.claude/channels/telegram)",
-      "Read(//Users/davidphan/.claude/channels/**)",
-      "Bash(chmod 600 ~/.claude/channels/telegram/.env)",
-      "Bash(git stash:*)",
-      "Bash(gh pr:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
