@@ -15,4 +15,7 @@ def _load() -> dict:
 
 def get_cost(model: str) -> dict | None:
     """Return {"input": float, "output": float} for a model, or None."""
-    return _load().get(model)
+    val = _load().get(model)
+    if not isinstance(val, dict):
+        return None
+    return val
