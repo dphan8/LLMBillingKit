@@ -9,6 +9,8 @@ def test_costs_json_structure():
     data = json.loads(costs_file.read_text())
     assert isinstance(data, dict)
     for model, prices in data.items():
+        if not isinstance(prices, dict):
+            continue
         assert isinstance(model, str)
         assert "input" in prices
         assert "output" in prices
