@@ -1,11 +1,19 @@
 import csv
 import io
 import json
+import re
 
 import click
 from tabulate import tabulate
 
 from .db import export_all, query_by_customer, query_by_model
+
+
+def _validate_input(value: str):
+    """Simple safety check for CLI arguments."""
+    if value and not re.match(r'^[A-Za-z0-9._\-@]*$', value):
+        raise click.BadParameter("Only alphanumeric, dots, hyphens, and underscores allowed.")
+    return value
 
 
 @click.group()
@@ -15,7 +23,7 @@ def cli():
 
 @cli.command()
 @click.option("--days", type=int, default=None, help="Filter to last N days.")
-@click.option("--model", type=str, default=None, help="Filter to a specific model.")
+@click.option("--model", type=str, default=None, callback=lambda ctx, param, val: _validate_input(val), help="Filter to a specific model.")
 def report(days, model):
     """Show margin report grouped by customer."""
     rows = query_by_customer(days=days, model=model)

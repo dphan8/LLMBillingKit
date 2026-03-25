@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import sqlite3
+import os
 from pathlib import Path
 
 DEFAULT_DB = Path.home() / ".LLMBillingKit" / "usage.db"
@@ -19,9 +22,17 @@ CREATE TABLE IF NOT EXISTS usage_events (
 
 
 def _connect(db_path: Path | None = None) -> sqlite3.Connection:
-    path = db_path or DEFAULT_DB
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = db_path or Path(os.getenv("LLMBILLINGKIT_DB_PATH", str(DEFAULT_DB)))
+    # Create the directory with restrictive permissions (0o700: rwx------)
+    # This prevents other users on the system from reading or modifying the billing data.
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    
     conn = sqlite3.connect(str(path))
+    
+    # Set restrictive permissions on the database file itself (0o600: rw-------)
+    if os.path.exists(str(path)):
+        os.chmod(str(path), 0o600)
+        
     conn.row_factory = sqlite3.Row
     conn.execute(_CREATE_TABLE)
     conn.commit()

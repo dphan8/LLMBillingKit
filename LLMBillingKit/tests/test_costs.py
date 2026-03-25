@@ -37,5 +37,12 @@ def test_get_cost_known_model():
     assert cost["output"] == 0.00001
 
 
+def test_get_cost_versioned_openai_model():
+    cost = get_cost("gpt-4o-mini-2024-07-18")
+    assert cost is not None
+    assert cost["input"] == 0.00000015
+    assert cost["output"] == 0.0000006
+
+
 def test_get_cost_unknown_model():
     assert get_cost("nonexistent-model-xyz") is None
