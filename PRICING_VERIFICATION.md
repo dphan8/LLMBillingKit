@@ -41,9 +41,8 @@ All prices below are per-token in USD, derived from per-1M-token rates on offici
 
 ## How to update
 
-Replace `LLMBillingKit/costs.json` with the verified costs.json, then run tests:
+Edit `LLMBillingKit/costs.json` directly with the verified prices, then run tests:
 
 ```
-cp costs.json LLMBillingKit/costs.json
 pytest LLMBillingKit/tests/test_costs.py -v
 ```
