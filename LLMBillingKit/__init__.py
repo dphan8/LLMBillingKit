@@ -1,3 +1,3 @@
-from .tracker import track
+from .tracker import track, wrap
 
-__all__ = ["track"]
+__all__ = ["track", "wrap"]

@@ -5,17 +5,37 @@ DEFAULT_DB = Path.home() / ".LLMBillingKit" / "usage.db"
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS usage_events (
-    request_id   TEXT PRIMARY KEY,
-    timestamp    TEXT NOT NULL,
-    customer     TEXT NOT NULL,
-    model        TEXT NOT NULL,
-    input_tokens INTEGER NOT NULL,
-    output_tokens INTEGER NOT NULL,
-    actual_cost  REAL NOT NULL,
-    charged      REAL NOT NULL,
-    margin       REAL NOT NULL
+    request_id      TEXT PRIMARY KEY,
+    timestamp       TEXT NOT NULL,
+    customer        TEXT NOT NULL,
+    model           TEXT NOT NULL,
+    input_tokens    INTEGER NOT NULL,
+    output_tokens   INTEGER NOT NULL,
+    actual_cost     REAL NOT NULL,
+    charged         REAL NOT NULL,
+    margin          REAL NOT NULL,
+    feature         TEXT,
+    session_id      TEXT,
+    priority        TEXT,
+    input_chars     INTEGER,
+    prompt_messages INTEGER
 )
 """
+
+_NEW_COLUMNS = [
+    ("feature",         "TEXT"),
+    ("session_id",      "TEXT"),
+    ("priority",        "TEXT"),
+    ("input_chars",     "INTEGER"),
+    ("prompt_messages", "INTEGER"),
+]
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(usage_events)")}
+    for col, coltype in _NEW_COLUMNS:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE usage_events ADD COLUMN {col} {coltype}")
 
 
 def _connect(db_path: Path | None = None) -> sqlite3.Connection:
@@ -24,6 +44,7 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute(_CREATE_TABLE)
+    _migrate(conn)
     conn.commit()
     return conn
 
@@ -34,7 +55,9 @@ def insert_event(event: dict, db_path: Path | None = None) -> None:
         conn.execute(
             "INSERT OR IGNORE INTO usage_events "
             "(request_id, timestamp, customer, model, input_tokens, output_tokens, "
-            "actual_cost, charged, margin) VALUES (?,?,?,?,?,?,?,?,?)",
+            "actual_cost, charged, margin, feature, session_id, priority, "
+            "input_chars, prompt_messages) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 event["request_id"],
                 event["timestamp"],
@@ -45,6 +68,11 @@ def insert_event(event: dict, db_path: Path | None = None) -> None:
                 event["actual_cost"],
                 event["charged"],
                 event["margin"],
+                event.get("feature"),
+                event.get("session_id"),
+                event.get("priority"),
+                event.get("input_chars"),
+                event.get("prompt_messages"),
             ),
         )
         conn.commit()
@@ -113,6 +141,32 @@ def export_all(days: int | None = None, model: str | None = None,
             sql += " AND model = ?"
             params.append(model)
         sql += " ORDER BY timestamp DESC"
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def query_by_feature(days: int | None = None,
+                     db_path: Path | None = None) -> list[dict]:
+    conn = _connect(db_path)
+    try:
+        sql = (
+            "SELECT COALESCE(feature, '(untagged)') as feature, "
+            "SUM(charged) as total_charged, "
+            "SUM(actual_cost) as total_cost, "
+            "SUM(margin) as total_margin, "
+            "SUM(input_tokens) as total_input_tokens, "
+            "SUM(output_tokens) as total_output_tokens, "
+            "SUM(COALESCE(input_chars, 0)) as total_input_chars, "
+            "COUNT(*) as calls "
+            "FROM usage_events WHERE 1=1"
+        )
+        params: list = []
+        if days:
+            sql += " AND timestamp >= datetime('now', ?)"
+            params.append(f"-{days} days")
+        sql += " GROUP BY COALESCE(feature, '(untagged)') ORDER BY total_margin DESC"
         rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
     finally:

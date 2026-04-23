@@ -68,3 +68,29 @@ def test_export_json(monkeypatch):
     result = runner.invoke(cli, ["export", "--format", "json"])
     assert result.exit_code == 0
     assert '"customer": "acme"' in result.output
+
+
+def test_features_command_groups_by_feature_and_shows_untagged(monkeypatch):
+    rows = [
+        {"feature": "summarize", "calls": 3,
+         "total_input_tokens": 300, "total_output_tokens": 150,
+         "total_input_chars": 4200,
+         "total_charged": 0.03, "total_cost": 0.002, "total_margin": 0.028},
+        {"feature": "chat", "calls": 2,
+         "total_input_tokens": 200, "total_output_tokens": 100,
+         "total_input_chars": 1100,
+         "total_charged": 0.02, "total_cost": 0.0015, "total_margin": 0.0185},
+        {"feature": "(untagged)", "calls": 1,
+         "total_input_tokens": 50, "total_output_tokens": 25,
+         "total_input_chars": 0,
+         "total_charged": 0.01, "total_cost": 0.0005, "total_margin": 0.0095},
+    ]
+    monkeypatch.setattr("LLMBillingKit.cli.query_by_feature", lambda **kw: rows)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["features"])
+    assert result.exit_code == 0
+    assert "summarize" in result.output
+    assert "chat" in result.output
+    assert "(untagged)" in result.output
+    assert "Feature" in result.output
+    assert "Input chars" in result.output
