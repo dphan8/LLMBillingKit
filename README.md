@@ -156,6 +156,52 @@ llmbilling update --request-id chatcmpl-abc --charged 0.25
 llmbilling update --request-id chatcmpl-abc --customer acme-enterprise
 ```
 
+### Bulk-create with `--calls`
+
+`llmbilling add --calls N` records `N` equivalent usage events in one go (each
+gets its own UUID). Useful for testing, demos, or backfilling fixed-shape
+traffic.
+
+```text
+$ llmbilling add \
+    --customer Walmart \
+    --model gpt-4o-mini \
+    --input-tokens 100 \
+    --output-tokens 150 \
+    --charged 0.15 \
+    --calls 10
+Added 10 events for customer 'Walmart':
+  model:      gpt-4o-mini
+  tokens:     in=100 out=150
+  per-call:   charged $0.150000 | cost $0.000105 | margin $0.149895
+  totals:     charged $1.500000 | cost $0.001050 | margin $1.498950
+```
+
+`--request-id` cannot be combined with `--calls > 1` (each event needs a
+unique ID).
+
+### `llmbilling customer set-calls`
+
+Set how many usage events a customer has, increasing or decreasing the count
+to a target number.
+
+```text
+llmbilling customer set-calls --customer Walmart --calls 10
+llmbilling customer set-calls --customer Walmart --calls 1 --yes
+```
+
+Behavior:
+
+- **Increase** clones the customer's existing event shape using fresh UUIDs
+  and current timestamps.
+- **Decrease** deletes the *most recent* matching events, preserving the
+  oldest history. Requires `--yes` to skip the confirmation prompt.
+- If the customer has events of multiple shapes (different
+  model / tokens / charged combinations), pass `--model`, `--input-tokens`,
+  `--output-tokens`, and `--charged` together to disambiguate which shape
+  to adjust.
+- A brand-new customer can be created by providing the full shape filter.
+
 ## CLI reference
 
 | Command | Description |
@@ -168,8 +214,10 @@ llmbilling update --request-id chatcmpl-abc --customer acme-enterprise
 | `llmbilling export` | Export raw events as CSV |
 | `llmbilling export --format json` | Export raw events as JSON |
 | `llmbilling add --customer <name> --model <model> --input-tokens <n> --output-tokens <n> --charged <amount>` | Record a usage event from the CLI |
+| `llmbilling add ... --calls <N>` | Record N equivalent events in one command |
 | `llmbilling update --request-id <id> --charged <amount>` | Update the charged amount on an existing event (recomputes margin) |
 | `llmbilling update --request-id <id> --customer <customer>` | Reassign an event to a different customer |
+| `llmbilling customer set-calls --customer <name> --calls <N>` | Adjust a customer's event count up or down |
 
 ## Supported models
 

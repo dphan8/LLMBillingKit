@@ -181,3 +181,36 @@ def export_all(days: int | None = None, model: str | None = None,
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+def events_for_customer(
+    customer: str,
+    db_path: Path | None = None,
+) -> list[dict]:
+    """Return every event for a customer, oldest first."""
+    conn = _connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM usage_events WHERE customer = ? ORDER BY timestamp ASC",
+            (customer,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_events(request_ids: list[str], db_path: Path | None = None) -> int:
+    """Delete the given events. Returns the number of rows actually removed."""
+    if not request_ids:
+        return 0
+    conn = _connect(db_path)
+    try:
+        placeholders = ",".join("?" for _ in request_ids)
+        cursor = conn.execute(
+            f"DELETE FROM usage_events WHERE request_id IN ({placeholders})",
+            tuple(request_ids),
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()

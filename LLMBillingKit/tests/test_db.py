@@ -2,6 +2,8 @@ import sqlite3
 
 from LLMBillingKit.db import (
     _connect,
+    delete_events,
+    events_for_customer,
     export_all,
     get_event,
     insert_event,
@@ -135,3 +137,40 @@ def test_update_event_returns_row_when_no_fields(tmp_path):
     result = update_event("r-empty", db_path=db)
     assert result is not None
     assert result["request_id"] == "r-empty"
+
+
+def test_events_for_customer_returns_oldest_first(tmp_path):
+    db = tmp_path / "test.db"
+    e1 = _make_event(request_id="e1", customer="acme")
+    e1["timestamp"] = "2026-01-01T00:00:00+00:00"
+    e2 = _make_event(request_id="e2", customer="acme")
+    e2["timestamp"] = "2026-02-01T00:00:00+00:00"
+    e3 = _make_event(request_id="e3", customer="other")
+    insert_event(e2, db_path=db)
+    insert_event(e1, db_path=db)
+    insert_event(e3, db_path=db)
+    rows = events_for_customer("acme", db_path=db)
+    assert [r["request_id"] for r in rows] == ["e1", "e2"]
+
+
+def test_events_for_customer_empty(tmp_path):
+    db = tmp_path / "test.db"
+    assert events_for_customer("nobody", db_path=db) == []
+
+
+def test_delete_events_removes_only_listed_ids(tmp_path):
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="keep"), db_path=db)
+    insert_event(_make_event(request_id="drop1"), db_path=db)
+    insert_event(_make_event(request_id="drop2"), db_path=db)
+    deleted = delete_events(["drop1", "drop2"], db_path=db)
+    assert deleted == 2
+    remaining = [r["request_id"] for r in export_all(db_path=db)]
+    assert remaining == ["keep"]
+
+
+def test_delete_events_empty_list_is_noop(tmp_path):
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="r"), db_path=db)
+    assert delete_events([], db_path=db) == 0
+    assert len(export_all(db_path=db)) == 1
