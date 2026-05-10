@@ -1,3 +1,3 @@
-from .tracker import track
+from .tracker import TrackingError, track, track_usage
 
-__all__ = ["track"]
+__all__ = ["TrackingError", "track", "track_usage"]

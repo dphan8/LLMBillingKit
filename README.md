@@ -58,7 +58,18 @@ $$
 4. It stores the event in local SQLite (`~/.LLMBillingKit/usage.db`).
 5. The CLI reads this table to generate reporting and exports.
 
-If a model is unknown in the pricing table, `track()` returns `None` rather than crashing your app.
+If a model is unknown in the pricing table, `track()` returns `None` rather than crashing your app. Pass `raise_errors=True` to get an explicit `TrackingError` describing what went wrong:
+
+```python
+from LLMBillingKit import TrackingError, track
+
+try:
+    track(response, charged=0.01, customer="user_123", raise_errors=True)
+except TrackingError as e:
+    print(f"could not track: {e}")
+```
+
+A small allowlist of dated provider snapshots that are verified to share pricing with a base model (for example `gpt-4o-mini-2024-07-18` → `gpt-4o-mini`) is normalized automatically. Anthropic canonical IDs already include a date in their pricing key (`claude-3-5-sonnet-20241022`) and are matched as-is. Other dated snapshots — including OpenAI ones priced differently from their alias (e.g. `gpt-4o-2024-05-13`) — must be added to `costs.json` with their own prices; they will not be silently collapsed onto another model's rates.
 
 ## CLI commands and sample output
 
@@ -113,6 +124,38 @@ $ llmbilling export --format json
 ]
 ```
 
+### `llmbilling add`
+
+Record a usage event without writing Python — useful for backfills, manual
+corrections, or providers that do not return a structured response.
+
+```text
+$ llmbilling add \
+    --customer acme \
+    --model gpt-4o-mini \
+    --input-tokens 8 \
+    --output-tokens 9 \
+    --charged 0.10
+Added event:
+  request_id: 6a4f...
+  customer:   acme
+  model:      gpt-4o-mini
+  tokens:     in=8 out=9
+  charged:    $0.100000
+  cost:       $0.000007
+  margin:     $0.099993
+```
+
+### `llmbilling update`
+
+Edit the customer or charged amount on an existing record. Margin is
+recomputed automatically when `--charged` changes.
+
+```text
+llmbilling update --request-id chatcmpl-abc --charged 0.25
+llmbilling update --request-id chatcmpl-abc --customer acme-enterprise
+```
+
 ## CLI reference
 
 | Command | Description |
@@ -124,6 +167,9 @@ $ llmbilling export --format json
 | `llmbilling models --days 30` | Model report for the last 30 days |
 | `llmbilling export` | Export raw events as CSV |
 | `llmbilling export --format json` | Export raw events as JSON |
+| `llmbilling add --customer <name> --model <model> --input-tokens <n> --output-tokens <n> --charged <amount>` | Record a usage event from the CLI |
+| `llmbilling update --request-id <id> --charged <amount>` | Update the charged amount on an existing event (recomputes margin) |
+| `llmbilling update --request-id <id> --customer <customer>` | Reassign an event to a different customer |
 
 ## Supported models
 

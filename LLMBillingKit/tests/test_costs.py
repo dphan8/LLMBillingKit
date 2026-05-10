@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from LLMBillingKit.costs import get_cost
+from LLMBillingKit.costs import get_cost, resolve_model
 
 
 def test_costs_json_structure():
@@ -27,3 +27,28 @@ def test_get_cost_known_model():
 
 def test_get_cost_unknown_model():
     assert get_cost("nonexistent-model-xyz") is None
+
+
+def test_resolve_model_uses_explicit_alias():
+    assert resolve_model("gpt-4o-mini-2024-07-18") == "gpt-4o-mini"
+
+
+def test_get_cost_resolves_aliased_dated_model():
+    assert get_cost("gpt-4o-mini-2024-07-18") == get_cost("gpt-4o-mini")
+
+
+def test_resolve_model_keeps_canonical_dated_id():
+    # Anthropic IDs already include a date in their canonical key.
+    assert resolve_model("claude-3-5-sonnet-20241022") == "claude-3-5-sonnet-20241022"
+
+
+def test_resolve_model_unknown_returns_none():
+    assert resolve_model("totally-made-up-model-2099-01-01") is None
+
+
+def test_resolve_model_unaliased_dated_snapshot_returns_none():
+    # Dated snapshots that aren't in the verified-equivalent allowlist must
+    # not silently collapse to the base alias's price — different OpenAI
+    # snapshots can be priced differently.
+    assert resolve_model("gpt-4o-2024-05-13") is None
+    assert get_cost("gpt-4o-2024-05-13") is None

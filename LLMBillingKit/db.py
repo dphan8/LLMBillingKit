@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sqlite3
 from pathlib import Path
 
@@ -48,6 +50,68 @@ def insert_event(event: dict, db_path: Path | None = None) -> None:
             ),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_event(request_id: str, db_path: Path | None = None) -> dict | None:
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM usage_events WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+    finally:
+        conn.close()
+
+
+def update_event(
+    request_id: str,
+    customer: str | None = None,
+    charged: float | None = None,
+    db_path: Path | None = None,
+) -> dict | None:
+    """Update an existing event's customer and/or charged amount.
+
+    When ``charged`` is provided, ``margin`` is recomputed against the
+    stored ``actual_cost``; otherwise ``margin`` is left untouched (so a
+    customer-only update can't introduce floating-point drift). Returns
+    the updated event dict, or None if no record matched the given
+    ``request_id``.
+    """
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM usage_events WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        if customer is None and charged is None:
+            return dict(row)
+
+        new_customer = customer if customer is not None else row["customer"]
+        if charged is not None:
+            new_charged = charged
+            new_margin = round(charged - row["actual_cost"], 10)
+        else:
+            new_charged = row["charged"]
+            new_margin = row["margin"]
+
+        conn.execute(
+            "UPDATE usage_events SET customer = ?, charged = ?, margin = ? "
+            "WHERE request_id = ?",
+            (new_customer, new_charged, new_margin, request_id),
+        )
+        conn.commit()
+
+        updated = conn.execute(
+            "SELECT * FROM usage_events WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        return dict(updated)
     finally:
         conn.close()
 

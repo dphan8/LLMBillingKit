@@ -1,6 +1,14 @@
 import sqlite3
 
-from LLMBillingKit.db import _connect, export_all, insert_event, query_by_customer, query_by_model
+from LLMBillingKit.db import (
+    _connect,
+    export_all,
+    get_event,
+    insert_event,
+    query_by_customer,
+    query_by_model,
+    update_event,
+)
 
 
 def _make_event(request_id="req-1", customer="acme", model="gpt-4o",
@@ -69,3 +77,61 @@ def test_query_with_model_filter(tmp_path):
     rows = query_by_customer(model="gpt-4o", db_path=db)
     assert len(rows) == 1
     assert rows[0]["customer"] == "acme"
+
+
+def test_get_event_returns_row(tmp_path):
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="r-get"), db_path=db)
+    row = get_event("r-get", db_path=db)
+    assert row is not None
+    assert row["request_id"] == "r-get"
+
+
+def test_get_event_returns_none_when_missing(tmp_path):
+    db = tmp_path / "test.db"
+    assert get_event("does-not-exist", db_path=db) is None
+
+
+def test_update_event_charged_recomputes_margin(tmp_path):
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="r-up", charged=0.01), db_path=db)
+    updated = update_event("r-up", charged=0.25, db_path=db)
+    assert updated is not None
+    assert updated["charged"] == 0.25
+    assert abs(updated["margin"] - (0.25 - updated["actual_cost"])) < 1e-12
+
+
+def test_update_event_customer_only(tmp_path):
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="r-up2", customer="acme"), db_path=db)
+    updated = update_event("r-up2", customer="acme-enterprise", db_path=db)
+    assert updated is not None
+    assert updated["customer"] == "acme-enterprise"
+    # charged untouched
+    assert updated["charged"] == 0.01
+
+
+def test_update_event_returns_none_when_missing(tmp_path):
+    db = tmp_path / "test.db"
+    assert update_event("nope", customer="x", db_path=db) is None
+
+
+def test_update_event_no_op_preserves_margin(tmp_path):
+    # Customer-only updates must not touch margin (no rounding drift).
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="r-noop", customer="acme", charged=0.01),
+                 db_path=db)
+    before = get_event("r-noop", db_path=db)
+    updated = update_event("r-noop", customer="acme-enterprise", db_path=db)
+    assert updated is not None
+    assert updated["margin"] == before["margin"]
+    assert updated["charged"] == before["charged"]
+    assert updated["customer"] == "acme-enterprise"
+
+
+def test_update_event_returns_row_when_no_fields(tmp_path):
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="r-empty"), db_path=db)
+    result = update_event("r-empty", db_path=db)
+    assert result is not None
+    assert result["request_id"] == "r-empty"
