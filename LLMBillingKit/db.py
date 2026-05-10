@@ -74,9 +74,11 @@ def update_event(
 ) -> dict | None:
     """Update an existing event's customer and/or charged amount.
 
-    When ``charged`` changes, ``margin`` is recomputed against the stored
-    ``actual_cost``. Returns the updated event dict, or None if no record
-    matched the given ``request_id``.
+    When ``charged`` is provided, ``margin`` is recomputed against the
+    stored ``actual_cost``; otherwise ``margin`` is left untouched (so a
+    customer-only update can't introduce floating-point drift). Returns
+    the updated event dict, or None if no record matched the given
+    ``request_id``.
     """
     conn = _connect(db_path)
     try:
@@ -87,9 +89,16 @@ def update_event(
         if row is None:
             return None
 
+        if customer is None and charged is None:
+            return dict(row)
+
         new_customer = customer if customer is not None else row["customer"]
-        new_charged = charged if charged is not None else row["charged"]
-        new_margin = round(new_charged - row["actual_cost"], 10)
+        if charged is not None:
+            new_charged = charged
+            new_margin = round(charged - row["actual_cost"], 10)
+        else:
+            new_charged = row["charged"]
+            new_margin = row["margin"]
 
         conn.execute(
             "UPDATE usage_events SET customer = ?, charged = ?, margin = ? "

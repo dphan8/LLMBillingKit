@@ -165,3 +165,36 @@ def test_update_command_unknown_id(monkeypatch):
     ])
     assert result.exit_code != 0
     assert "No event found" in result.output
+
+
+def test_add_rejects_negative_tokens(monkeypatch):
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "add", "--customer", "acme", "--model", "gpt-4o",
+        "--input-tokens", "-1", "--output-tokens", "1", "--charged", "0.01",
+    ])
+    assert result.exit_code != 0
+
+
+def test_add_rejects_negative_charged(monkeypatch):
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "add", "--customer", "acme", "--model", "gpt-4o",
+        "--input-tokens", "1", "--output-tokens", "1", "--charged", "-0.01",
+    ])
+    assert result.exit_code != 0
+
+
+def test_add_rejects_duplicate_request_id(monkeypatch):
+    monkeypatch.setattr(
+        "LLMBillingKit.cli.get_event",
+        lambda request_id: _make_event(request_id=request_id),
+    )
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "add", "--customer", "acme", "--model", "gpt-4o",
+        "--input-tokens", "1", "--output-tokens", "1", "--charged", "0.01",
+        "--request-id", "already-here",
+    ])
+    assert result.exit_code != 0
+    assert "already exists" in result.output

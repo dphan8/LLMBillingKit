@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from .costs import get_cost, resolve_model
+from .costs import _load, resolve_model
 from .db import insert_event
 
 
@@ -24,9 +24,11 @@ def track_usage(
 ) -> dict | None:
     """Track an LLM API call from raw fields (no response object required).
 
-    Returns the persisted event dict, or ``None`` if tracking failed and
-    ``raise_errors`` is False. With ``raise_errors=True`` a
-    :class:`TrackingError` is raised instead of silently returning None.
+    Returns the event dict (the row written, or the existing row when the
+    given ``request_id`` already exists — ``insert_event`` is idempotent on
+    ``request_id``). Returns ``None`` if tracking failed and ``raise_errors``
+    is False; with ``raise_errors=True`` a :class:`TrackingError` is raised
+    instead.
     """
     try:
         if not model:
@@ -36,7 +38,7 @@ def track_usage(
         if canonical is None:
             raise TrackingError(f"Unknown model pricing: {model!r}")
 
-        cost_info = get_cost(canonical)
+        cost_info = _load()[canonical]
         actual_cost = (input_tokens * cost_info["input"]) + (output_tokens * cost_info["output"])
         margin = charged - actual_cost
 
@@ -69,6 +71,7 @@ def track(
     response,
     charged: float,
     customer: str = "default",
+    *,
     raise_errors: bool = False,
 ) -> dict | None:
     """Track an LLM API call and compute margin.
@@ -78,8 +81,8 @@ def track(
         charged: The amount charged to the customer for this call.
         customer: Customer identifier.
         raise_errors: When True, raise :class:`TrackingError` on failure
-            instead of silently returning None. Defaults to False for
-            backwards compatibility.
+            instead of silently returning None. Keyword-only; defaults to
+            False for backwards compatibility.
 
     Returns:
         A dict with cost/margin info, or None if tracking failed.

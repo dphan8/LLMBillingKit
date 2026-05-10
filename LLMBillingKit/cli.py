@@ -5,7 +5,7 @@ import json
 import click
 from tabulate import tabulate
 
-from .db import export_all, query_by_customer, query_by_model, update_event
+from .db import export_all, get_event, query_by_customer, query_by_model, update_event
 from .tracker import TrackingError, track_usage
 
 
@@ -90,14 +90,25 @@ def export(days, model, fmt):
 
 @cli.command()
 @click.option("--customer", required=True, help="Customer identifier.")
-@click.option("--model", required=True, help="Model name (must exist in pricing table).")
-@click.option("--input-tokens", type=int, required=True, help="Prompt/input token count.")
-@click.option("--output-tokens", type=int, required=True, help="Completion/output token count.")
-@click.option("--charged", type=float, required=True, help="Amount charged to the customer.")
+@click.option("--model", required=True,
+              help="Model name. Must exist in the pricing table or resolve via "
+                   "an alias (for example dated OpenAI snapshots like "
+                   "`gpt-4o-mini-2024-07-18`).")
+@click.option("--input-tokens", type=click.IntRange(min=0), required=True,
+              help="Prompt/input token count.")
+@click.option("--output-tokens", type=click.IntRange(min=0), required=True,
+              help="Completion/output token count.")
+@click.option("--charged", type=click.FloatRange(min=0.0), required=True,
+              help="Amount charged to the customer.")
 @click.option("--request-id", default=None,
               help="Stable request ID. A UUID is generated if omitted.")
 def add(customer, model, input_tokens, output_tokens, charged, request_id):
     """Add a usage event without writing Python code."""
+    if request_id is not None and get_event(request_id) is not None:
+        raise click.ClickException(
+            f"An event with request_id={request_id!r} already exists. "
+            "Use `llmbilling update` to modify it."
+        )
     try:
         event = track_usage(
             model=model,
@@ -117,7 +128,7 @@ def add(customer, model, input_tokens, output_tokens, charged, request_id):
 @cli.command()
 @click.option("--request-id", required=True, help="ID of the event to update.")
 @click.option("--customer", default=None, help="New customer identifier.")
-@click.option("--charged", type=float, default=None,
+@click.option("--charged", type=click.FloatRange(min=0.0), default=None,
               help="New charged amount. Margin is recomputed automatically.")
 def update(request_id, customer, charged):
     """Update charged amount or customer for an existing record."""

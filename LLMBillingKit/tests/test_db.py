@@ -114,3 +114,24 @@ def test_update_event_customer_only(tmp_path):
 def test_update_event_returns_none_when_missing(tmp_path):
     db = tmp_path / "test.db"
     assert update_event("nope", customer="x", db_path=db) is None
+
+
+def test_update_event_no_op_preserves_margin(tmp_path):
+    # Customer-only updates must not touch margin (no rounding drift).
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="r-noop", customer="acme", charged=0.01),
+                 db_path=db)
+    before = get_event("r-noop", db_path=db)
+    updated = update_event("r-noop", customer="acme-enterprise", db_path=db)
+    assert updated is not None
+    assert updated["margin"] == before["margin"]
+    assert updated["charged"] == before["charged"]
+    assert updated["customer"] == "acme-enterprise"
+
+
+def test_update_event_returns_row_when_no_fields(tmp_path):
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="r-empty"), db_path=db)
+    result = update_event("r-empty", db_path=db)
+    assert result is not None
+    assert result["request_id"] == "r-empty"

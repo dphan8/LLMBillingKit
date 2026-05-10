@@ -69,7 +69,7 @@ except TrackingError as e:
     print(f"could not track: {e}")
 ```
 
-Provider-specific dated model IDs (for example `gpt-4o-mini-2024-07-18`) are normalized to their base pricing key automatically.
+A small allowlist of dated provider snapshots that are verified to share pricing with a base model (for example `gpt-4o-mini-2024-07-18` → `gpt-4o-mini`) is normalized automatically. Anthropic canonical IDs already include a date in their pricing key (`claude-3-5-sonnet-20241022`) and are matched as-is. Other dated snapshots — including OpenAI ones priced differently from their alias (e.g. `gpt-4o-2024-05-13`) — must be added to `costs.json` with their own prices; they will not be silently collapsed onto another model's rates.
 
 ## CLI commands and sample output
 
@@ -152,8 +152,8 @@ Edit the customer or charged amount on an existing record. Margin is
 recomputed automatically when `--charged` changes.
 
 ```text
-$ llmbilling update --request-id chatcmpl-abc --charged 0.25
-$ llmbilling update --request-id chatcmpl-abc --customer acme-enterprise
+llmbilling update --request-id chatcmpl-abc --charged 0.25
+llmbilling update --request-id chatcmpl-abc --customer acme-enterprise
 ```
 
 ## CLI reference
