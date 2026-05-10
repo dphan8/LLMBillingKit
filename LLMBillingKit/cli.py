@@ -5,6 +5,7 @@ import json
 import click
 from tabulate import tabulate
 
+from .costs import resolve_model
 from .db import (
     delete_events,
     events_for_customer,
@@ -15,6 +16,14 @@ from .db import (
     update_event,
 )
 from .tracker import TrackingError, track_usage
+
+
+def _track_usage_or_click(**kwargs) -> dict:
+    """Call track_usage(raise_errors=True), surfacing TrackingError as Click."""
+    try:
+        return track_usage(raise_errors=True, **kwargs)
+    except TrackingError as e:
+        raise click.ClickException(str(e)) from e
 
 
 _SHAPE_FIELDS = ("model", "input_tokens", "output_tokens", "charged")
@@ -151,18 +160,14 @@ def add(customer, model, input_tokens, output_tokens, charged, calls, request_id
 
     events: list[dict] = []
     for i in range(calls):
-        try:
-            event = track_usage(
-                model=model,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                charged=charged,
-                customer=customer,
-                request_id=request_id if i == 0 else None,
-                raise_errors=True,
-            )
-        except TrackingError as e:
-            raise click.ClickException(str(e)) from e
+        event = _track_usage_or_click(
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            charged=charged,
+            customer=customer,
+            request_id=request_id if i == 0 else None,
+        )
         events.append(event)
 
     if calls == 1:
@@ -231,6 +236,11 @@ def set_calls(customer_name, calls, model, input_tokens, output_tokens,
     first, keeping the oldest history intact.
     """
     has_shape = _validate_shape_args(model, input_tokens, output_tokens, charged)
+    if has_shape:
+        canonical_model = resolve_model(model)
+        if canonical_model is None:
+            raise click.ClickException(f"Unknown model pricing: {model!r}")
+        model = canonical_model
     rows = events_for_customer(customer_name)
 
     if not rows:
@@ -247,13 +257,12 @@ def set_calls(customer_name, calls, model, input_tokens, output_tokens,
             )
             return
         for _ in range(calls):
-            track_usage(
+            _track_usage_or_click(
                 model=model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 charged=charged,
                 customer=customer_name,
-                raise_errors=True,
             )
         click.echo(f"Created {calls} events for customer {customer_name!r}.")
         return
@@ -286,13 +295,12 @@ def set_calls(customer_name, calls, model, input_tokens, output_tokens,
     if delta > 0:
         m, in_t, out_t, ch = target_shape
         for _ in range(delta):
-            track_usage(
+            _track_usage_or_click(
                 model=m,
                 input_tokens=in_t,
                 output_tokens=out_t,
                 charged=ch,
                 customer=customer_name,
-                raise_errors=True,
             )
         click.echo(
             f"Added {delta} events. Customer {customer_name!r} now has "

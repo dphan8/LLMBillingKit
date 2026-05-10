@@ -394,6 +394,51 @@ def test_set_calls_no_op_when_already_at_target(monkeypatch):
     assert "Nothing to do" in result.output
 
 
+def test_set_calls_resolves_dated_alias_against_canonical_rows(monkeypatch):
+    # Customer was tracked via a dated alias; track_usage stored the canonical
+    # name. Passing the alias to set-calls must still find the existing rows.
+    rows = [
+        _make_event(request_id="r1", customer="acme", model="gpt-4o-mini"),
+        _make_event(request_id="r2", customer="acme", model="gpt-4o-mini"),
+    ]
+    monkeypatch.setattr(
+        "LLMBillingKit.cli.events_for_customer", lambda c: rows,
+    )
+    inserted = []
+    monkeypatch.setattr(
+        "LLMBillingKit.tracker.insert_event",
+        lambda event: inserted.append(event),
+    )
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "customer", "set-calls",
+        "--customer", "acme", "--calls", "5",
+        "--model", "gpt-4o-mini-2024-07-18",
+        "--input-tokens", "100", "--output-tokens", "50", "--charged", "0.01",
+    ])
+    assert result.exit_code == 0, result.output
+    # Should add 3 events (5 - 2 existing) instead of treating current as 0.
+    assert len(inserted) == 3
+    assert "Added 3 events" in result.output
+
+
+def test_set_calls_unknown_model_returns_click_error(monkeypatch):
+    monkeypatch.setattr(
+        "LLMBillingKit.cli.events_for_customer", lambda c: [],
+    )
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "customer", "set-calls",
+        "--customer", "Newco", "--calls", "1",
+        "--model", "totally-unknown-model",
+        "--input-tokens", "1", "--output-tokens", "1", "--charged", "0.01",
+    ])
+    assert result.exit_code != 0
+    assert "Unknown model pricing" in result.output
+    # Crucially: no Python traceback escaped.
+    assert "Traceback" not in result.output
+
+
 def test_set_calls_end_to_end_against_real_db(tmp_path, monkeypatch):
     """End-to-end: increase from 1 → 10, then back to 1, against a real DB."""
     db_path = tmp_path / "usage.db"
