@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from LLMBillingKit.costs import get_cost
+from LLMBillingKit.costs import get_cost, resolve_model
 
 
 def test_costs_json_structure():
@@ -27,3 +27,22 @@ def test_get_cost_known_model():
 
 def test_get_cost_unknown_model():
     assert get_cost("nonexistent-model-xyz") is None
+
+
+def test_resolve_model_strips_iso_date_suffix():
+    assert resolve_model("gpt-4o-mini-2024-07-18") == "gpt-4o-mini"
+    assert resolve_model("gpt-4o-2024-08-06") == "gpt-4o"
+
+
+def test_get_cost_resolves_dated_model():
+    cost = get_cost("gpt-4o-mini-2024-07-18")
+    assert cost == get_cost("gpt-4o-mini")
+
+
+def test_resolve_model_keeps_canonical_dated_id():
+    # Anthropic IDs already include a date in their canonical key.
+    assert resolve_model("claude-3-5-sonnet-20241022") == "claude-3-5-sonnet-20241022"
+
+
+def test_resolve_model_unknown_returns_none():
+    assert resolve_model("totally-made-up-model-2099-01-01") is None

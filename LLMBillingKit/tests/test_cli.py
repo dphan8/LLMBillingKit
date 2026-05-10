@@ -68,3 +68,100 @@ def test_export_json(monkeypatch):
     result = runner.invoke(cli, ["export", "--format", "json"])
     assert result.exit_code == 0
     assert '"customer": "acme"' in result.output
+
+
+def test_add_command_inserts_event(monkeypatch):
+    captured = {}
+
+    def fake_insert(event):
+        captured["event"] = event
+
+    monkeypatch.setattr("LLMBillingKit.tracker.insert_event", fake_insert)
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "add",
+        "--customer", "acme",
+        "--model", "gpt-4o-mini",
+        "--input-tokens", "8",
+        "--output-tokens", "9",
+        "--charged", "0.10",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Added event" in result.output
+    assert captured["event"]["customer"] == "acme"
+    assert captured["event"]["model"] == "gpt-4o-mini"
+    assert captured["event"]["charged"] == 0.10
+
+
+def test_add_command_normalizes_dated_model(monkeypatch):
+    captured = {}
+
+    def fake_insert(event):
+        captured["event"] = event
+
+    monkeypatch.setattr("LLMBillingKit.tracker.insert_event", fake_insert)
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "add",
+        "--customer", "acme",
+        "--model", "gpt-4o-mini-2024-07-18",
+        "--input-tokens", "10",
+        "--output-tokens", "10",
+        "--charged", "0.05",
+    ])
+    assert result.exit_code == 0, result.output
+    assert captured["event"]["model"] == "gpt-4o-mini"
+
+
+def test_add_command_unknown_model_reports_error(monkeypatch):
+    monkeypatch.setattr("LLMBillingKit.tracker.insert_event",
+                        lambda event: None)
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "add",
+        "--customer", "acme",
+        "--model", "totally-unknown-model",
+        "--input-tokens", "1",
+        "--output-tokens", "1",
+        "--charged", "0.01",
+    ])
+    assert result.exit_code != 0
+    assert "Unknown model pricing" in result.output
+
+
+def test_update_command_changes_charged(monkeypatch):
+    monkeypatch.setattr(
+        "LLMBillingKit.cli.update_event",
+        lambda request_id, customer=None, charged=None: {
+            **_make_event(request_id=request_id),
+            "charged": charged if charged is not None else 0.01,
+            "margin": (charged if charged is not None else 0.01) - 0.00075,
+        },
+    )
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "update", "--request-id", "req-1", "--charged", "0.25",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Updated event" in result.output
+    assert "0.250000" in result.output
+
+
+def test_update_command_requires_a_field(monkeypatch):
+    runner = CliRunner()
+    result = runner.invoke(cli, ["update", "--request-id", "req-1"])
+    assert result.exit_code != 0
+    assert "Provide --customer and/or --charged" in result.output
+
+
+def test_update_command_unknown_id(monkeypatch):
+    monkeypatch.setattr(
+        "LLMBillingKit.cli.update_event",
+        lambda request_id, customer=None, charged=None: None,
+    )
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "update", "--request-id", "missing", "--customer", "x",
+    ])
+    assert result.exit_code != 0
+    assert "No event found" in result.output

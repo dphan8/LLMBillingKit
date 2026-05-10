@@ -52,6 +52,59 @@ def insert_event(event: dict, db_path: Path | None = None) -> None:
         conn.close()
 
 
+def get_event(request_id: str, db_path: Path | None = None) -> dict | None:
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM usage_events WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+    finally:
+        conn.close()
+
+
+def update_event(
+    request_id: str,
+    customer: str | None = None,
+    charged: float | None = None,
+    db_path: Path | None = None,
+) -> dict | None:
+    """Update an existing event's customer and/or charged amount.
+
+    When ``charged`` changes, ``margin`` is recomputed against the stored
+    ``actual_cost``. Returns the updated event dict, or None if no record
+    matched the given ``request_id``.
+    """
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM usage_events WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        new_customer = customer if customer is not None else row["customer"]
+        new_charged = charged if charged is not None else row["charged"]
+        new_margin = round(new_charged - row["actual_cost"], 10)
+
+        conn.execute(
+            "UPDATE usage_events SET customer = ?, charged = ?, margin = ? "
+            "WHERE request_id = ?",
+            (new_customer, new_charged, new_margin, request_id),
+        )
+        conn.commit()
+
+        updated = conn.execute(
+            "SELECT * FROM usage_events WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        return dict(updated)
+    finally:
+        conn.close()
+
+
 def query_by_customer(days: int | None = None, model: str | None = None,
                       db_path: Path | None = None) -> list[dict]:
     conn = _connect(db_path)
