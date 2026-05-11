@@ -70,13 +70,18 @@ def test_export_json(monkeypatch):
     assert '"customer": "acme"' in result.output
 
 
+def _patch_insert_events(monkeypatch) -> list[dict]:
+    """Replace cli.insert_events with a no-op that records the inserted rows."""
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        "LLMBillingKit.cli.insert_events",
+        lambda events: captured.extend(events),
+    )
+    return captured
+
+
 def test_add_command_inserts_event(monkeypatch):
-    captured = {}
-
-    def fake_insert(event):
-        captured["event"] = event
-
-    monkeypatch.setattr("LLMBillingKit.tracker.insert_event", fake_insert)
+    inserted = _patch_insert_events(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(cli, [
         "add",
@@ -88,18 +93,14 @@ def test_add_command_inserts_event(monkeypatch):
     ])
     assert result.exit_code == 0, result.output
     assert "Added event" in result.output
-    assert captured["event"]["customer"] == "acme"
-    assert captured["event"]["model"] == "gpt-4o-mini"
-    assert captured["event"]["charged"] == 0.10
+    assert len(inserted) == 1
+    assert inserted[0]["customer"] == "acme"
+    assert inserted[0]["model"] == "gpt-4o-mini"
+    assert inserted[0]["charged"] == 0.10
 
 
 def test_add_command_normalizes_dated_model(monkeypatch):
-    captured = {}
-
-    def fake_insert(event):
-        captured["event"] = event
-
-    monkeypatch.setattr("LLMBillingKit.tracker.insert_event", fake_insert)
+    inserted = _patch_insert_events(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(cli, [
         "add",
@@ -110,12 +111,11 @@ def test_add_command_normalizes_dated_model(monkeypatch):
         "--charged", "0.05",
     ])
     assert result.exit_code == 0, result.output
-    assert captured["event"]["model"] == "gpt-4o-mini"
+    assert inserted[0]["model"] == "gpt-4o-mini"
 
 
 def test_add_command_unknown_model_reports_error(monkeypatch):
-    monkeypatch.setattr("LLMBillingKit.tracker.insert_event",
-                        lambda event: None)
+    inserted = _patch_insert_events(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(cli, [
         "add",
@@ -127,6 +127,8 @@ def test_add_command_unknown_model_reports_error(monkeypatch):
     ])
     assert result.exit_code != 0
     assert "Unknown model pricing" in result.output
+    # Critically: nothing was inserted (no partial success).
+    assert inserted == []
 
 
 def test_update_command_changes_charged(monkeypatch):
@@ -201,11 +203,7 @@ def test_add_rejects_duplicate_request_id(monkeypatch):
 
 
 def test_add_calls_creates_n_events(monkeypatch):
-    inserted = []
-    monkeypatch.setattr(
-        "LLMBillingKit.tracker.insert_event",
-        lambda event: inserted.append(event),
-    )
+    inserted = _patch_insert_events(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(cli, [
         "add", "--customer", "Walmart", "--model", "gpt-4o-mini",
@@ -254,6 +252,21 @@ def test_set_calls_new_customer_requires_full_shape(monkeypatch):
     assert "No events found" in result.output
 
 
+def test_set_calls_zero_for_missing_customer_is_noop(monkeypatch):
+    monkeypatch.setattr(
+        "LLMBillingKit.cli.events_for_customer", lambda c: [],
+    )
+    inserted = _patch_insert_events(monkeypatch)
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "customer", "set-calls",
+        "--customer", "Nobody", "--calls", "0",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Nothing to do" in result.output
+    assert inserted == []
+
+
 def test_set_calls_new_customer_partial_shape_rejected(monkeypatch):
     monkeypatch.setattr(
         "LLMBillingKit.cli.events_for_customer", lambda c: [],
@@ -272,11 +285,7 @@ def test_set_calls_new_customer_creates_events(monkeypatch):
     monkeypatch.setattr(
         "LLMBillingKit.cli.events_for_customer", lambda c: [],
     )
-    inserted = []
-    monkeypatch.setattr(
-        "LLMBillingKit.tracker.insert_event",
-        lambda event: inserted.append(event),
-    )
+    inserted = _patch_insert_events(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(cli, [
         "customer", "set-calls",
@@ -297,11 +306,7 @@ def test_set_calls_existing_single_shape_increase(monkeypatch):
     monkeypatch.setattr(
         "LLMBillingKit.cli.events_for_customer", lambda c: rows,
     )
-    inserted = []
-    monkeypatch.setattr(
-        "LLMBillingKit.tracker.insert_event",
-        lambda event: inserted.append(event),
-    )
+    inserted = _patch_insert_events(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(cli, [
         "customer", "set-calls",
@@ -404,11 +409,7 @@ def test_set_calls_resolves_dated_alias_against_canonical_rows(monkeypatch):
     monkeypatch.setattr(
         "LLMBillingKit.cli.events_for_customer", lambda c: rows,
     )
-    inserted = []
-    monkeypatch.setattr(
-        "LLMBillingKit.tracker.insert_event",
-        lambda event: inserted.append(event),
-    )
+    inserted = _patch_insert_events(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(cli, [
         "customer", "set-calls",

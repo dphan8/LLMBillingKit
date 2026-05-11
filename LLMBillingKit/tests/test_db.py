@@ -174,3 +174,30 @@ def test_delete_events_empty_list_is_noop(tmp_path):
     insert_event(_make_event(request_id="r"), db_path=db)
     assert delete_events([], db_path=db) == 0
     assert len(export_all(db_path=db)) == 1
+
+
+def test_delete_events_chunks_above_sqlite_var_limit(tmp_path):
+    # Push past the conservative 500-id chunk size to exercise the loop.
+    db = tmp_path / "test.db"
+    ids = [f"r{i}" for i in range(1200)]
+    for rid in ids:
+        insert_event(_make_event(request_id=rid), db_path=db)
+    deleted = delete_events(ids, db_path=db)
+    assert deleted == 1200
+    assert export_all(db_path=db) == []
+
+
+def test_events_for_customer_stable_tiebreaker_on_timestamp_tie(tmp_path):
+    # Same timestamp on multiple rows must produce a stable ordering across
+    # runs so customer set-calls deletes the same request IDs each time.
+    db = tmp_path / "test.db"
+    same_ts = "2026-01-01T00:00:00+00:00"
+    for rid in ("e3", "e1", "e2"):
+        e = _make_event(request_id=rid, customer="acme")
+        e["timestamp"] = same_ts
+        insert_event(e, db_path=db)
+    order_a = [r["request_id"] for r in events_for_customer("acme", db_path=db)]
+    order_b = [r["request_id"] for r in events_for_customer("acme", db_path=db)]
+    assert order_a == order_b
+    # Insertion order via rowid: e3 (first), then e1, then e2.
+    assert order_a == ["e3", "e1", "e2"]

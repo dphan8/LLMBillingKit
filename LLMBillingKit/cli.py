@@ -11,19 +11,35 @@ from .db import (
     events_for_customer,
     export_all,
     get_event,
+    insert_events,
     query_by_customer,
     query_by_model,
     update_event,
 )
-from .tracker import TrackingError, track_usage
+from .tracker import TrackingError, build_event
 
 
-def _track_usage_or_click(**kwargs) -> dict:
-    """Call track_usage(raise_errors=True), surfacing TrackingError as Click."""
-    try:
-        return track_usage(raise_errors=True, **kwargs)
-    except TrackingError as e:
-        raise click.ClickException(str(e)) from e
+def _build_and_insert_or_click(*, count: int, request_id: str | None = None,
+                               **fields) -> list[dict]:
+    """Build ``count`` events and insert them in a single transaction.
+
+    The first event uses ``request_id`` (if given); subsequent events get
+    fresh UUIDs. ``TrackingError`` is converted to ``click.ClickException``
+    *before* anything is inserted, so a bad model never produces a partial
+    success.
+    """
+    events: list[dict] = []
+    for i in range(count):
+        try:
+            event = build_event(
+                request_id=request_id if i == 0 else None,
+                **fields,
+            )
+        except TrackingError as e:
+            raise click.ClickException(str(e)) from e
+        events.append(event)
+    insert_events(events)
+    return events
 
 
 _SHAPE_FIELDS = ("model", "input_tokens", "output_tokens", "charged")
@@ -158,17 +174,15 @@ def add(customer, model, input_tokens, output_tokens, charged, calls, request_id
             "Use `llmbilling update` to modify it."
         )
 
-    events: list[dict] = []
-    for i in range(calls):
-        event = _track_usage_or_click(
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            charged=charged,
-            customer=customer,
-            request_id=request_id if i == 0 else None,
-        )
-        events.append(event)
+    events = _build_and_insert_or_click(
+        count=calls,
+        request_id=request_id,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        charged=charged,
+        customer=customer,
+    )
 
     if calls == 1:
         click.echo("Added event:")
@@ -244,26 +258,27 @@ def set_calls(customer_name, calls, model, input_tokens, output_tokens,
     rows = events_for_customer(customer_name)
 
     if not rows:
-        # Brand-new customer: must supply a full shape to create events.
+        # Asking a nonexistent customer to have 0 events is a no-op.
+        if calls == 0:
+            click.echo(
+                f"Customer {customer_name!r} already has 0 calls. Nothing to do."
+            )
+            return
+        # Brand-new customer with calls > 0: must supply a full shape.
         if not has_shape:
             raise click.ClickException(
                 f"No events found for customer {customer_name!r}. To create "
                 "events, also pass --model, --input-tokens, --output-tokens, "
                 "and --charged."
             )
-        if calls == 0:
-            click.echo(
-                f"Customer {customer_name!r} already has 0 calls. Nothing to do."
-            )
-            return
-        for _ in range(calls):
-            _track_usage_or_click(
-                model=model,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                charged=charged,
-                customer=customer_name,
-            )
+        _build_and_insert_or_click(
+            count=calls,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            charged=charged,
+            customer=customer_name,
+        )
         click.echo(f"Created {calls} events for customer {customer_name!r}.")
         return
 
@@ -294,14 +309,14 @@ def set_calls(customer_name, calls, model, input_tokens, output_tokens,
 
     if delta > 0:
         m, in_t, out_t, ch = target_shape
-        for _ in range(delta):
-            _track_usage_or_click(
-                model=m,
-                input_tokens=in_t,
-                output_tokens=out_t,
-                charged=ch,
-                customer=customer_name,
-            )
+        _build_and_insert_or_click(
+            count=delta,
+            model=m,
+            input_tokens=in_t,
+            output_tokens=out_t,
+            charged=ch,
+            customer=customer_name,
+        )
         click.echo(
             f"Added {delta} events. Customer {customer_name!r} now has "
             f"{calls} matching call(s)."
