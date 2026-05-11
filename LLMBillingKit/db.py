@@ -30,25 +30,43 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+_INSERT_SQL = (
+    "INSERT OR IGNORE INTO usage_events "
+    "(request_id, timestamp, customer, model, input_tokens, output_tokens, "
+    "actual_cost, charged, margin) VALUES (?,?,?,?,?,?,?,?,?)"
+)
+
+
+def _row_for(event: dict) -> tuple:
+    return (
+        event["request_id"],
+        event["timestamp"],
+        event["customer"],
+        event["model"],
+        event["input_tokens"],
+        event["output_tokens"],
+        event["actual_cost"],
+        event["charged"],
+        event["margin"],
+    )
+
+
 def insert_event(event: dict, db_path: Path | None = None) -> None:
     conn = _connect(db_path)
     try:
-        conn.execute(
-            "INSERT OR IGNORE INTO usage_events "
-            "(request_id, timestamp, customer, model, input_tokens, output_tokens, "
-            "actual_cost, charged, margin) VALUES (?,?,?,?,?,?,?,?,?)",
-            (
-                event["request_id"],
-                event["timestamp"],
-                event["customer"],
-                event["model"],
-                event["input_tokens"],
-                event["output_tokens"],
-                event["actual_cost"],
-                event["charged"],
-                event["margin"],
-            ),
-        )
+        conn.execute(_INSERT_SQL, _row_for(event))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_events(events: list[dict], db_path: Path | None = None) -> None:
+    """Insert many events on a single connection in one transaction."""
+    if not events:
+        return
+    conn = _connect(db_path)
+    try:
+        conn.executemany(_INSERT_SQL, [_row_for(e) for e in events])
         conn.commit()
     finally:
         conn.close()
@@ -179,5 +197,55 @@ def export_all(days: int | None = None, model: str | None = None,
         sql += " ORDER BY timestamp DESC"
         rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def events_for_customer(
+    customer: str,
+    db_path: Path | None = None,
+) -> list[dict]:
+    """Return every event for a customer, oldest first.
+
+    Uses ``rowid`` as a stable tiebreaker so timestamp ties produce the same
+    ordering across runs (important for ``customer set-calls`` determinism).
+    """
+    conn = _connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM usage_events WHERE customer = ? "
+            "ORDER BY timestamp ASC, rowid ASC",
+            (customer,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+_DELETE_CHUNK = 500
+
+
+def delete_events(request_ids: list[str], db_path: Path | None = None) -> int:
+    """Delete the given events. Returns the number of rows actually removed.
+
+    The deletion is chunked to stay well below SQLite's ``IN (...)`` variable
+    limit (default 999, sometimes lower on older builds) and runs as a single
+    transaction so a partial failure rolls back cleanly.
+    """
+    if not request_ids:
+        return 0
+    conn = _connect(db_path)
+    try:
+        deleted = 0
+        for start in range(0, len(request_ids), _DELETE_CHUNK):
+            chunk = request_ids[start:start + _DELETE_CHUNK]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor = conn.execute(
+                f"DELETE FROM usage_events WHERE request_id IN ({placeholders})",  # noqa: S608
+                tuple(chunk),
+            )
+            deleted += cursor.rowcount
+        conn.commit()
+        return deleted
     finally:
         conn.close()

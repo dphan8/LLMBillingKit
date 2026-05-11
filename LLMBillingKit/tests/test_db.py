@@ -2,6 +2,8 @@ import sqlite3
 
 from LLMBillingKit.db import (
     _connect,
+    delete_events,
+    events_for_customer,
     export_all,
     get_event,
     insert_event,
@@ -135,3 +137,67 @@ def test_update_event_returns_row_when_no_fields(tmp_path):
     result = update_event("r-empty", db_path=db)
     assert result is not None
     assert result["request_id"] == "r-empty"
+
+
+def test_events_for_customer_returns_oldest_first(tmp_path):
+    db = tmp_path / "test.db"
+    e1 = _make_event(request_id="e1", customer="acme")
+    e1["timestamp"] = "2026-01-01T00:00:00+00:00"
+    e2 = _make_event(request_id="e2", customer="acme")
+    e2["timestamp"] = "2026-02-01T00:00:00+00:00"
+    e3 = _make_event(request_id="e3", customer="other")
+    insert_event(e2, db_path=db)
+    insert_event(e1, db_path=db)
+    insert_event(e3, db_path=db)
+    rows = events_for_customer("acme", db_path=db)
+    assert [r["request_id"] for r in rows] == ["e1", "e2"]
+
+
+def test_events_for_customer_empty(tmp_path):
+    db = tmp_path / "test.db"
+    assert events_for_customer("nobody", db_path=db) == []
+
+
+def test_delete_events_removes_only_listed_ids(tmp_path):
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="keep"), db_path=db)
+    insert_event(_make_event(request_id="drop1"), db_path=db)
+    insert_event(_make_event(request_id="drop2"), db_path=db)
+    deleted = delete_events(["drop1", "drop2"], db_path=db)
+    assert deleted == 2
+    remaining = [r["request_id"] for r in export_all(db_path=db)]
+    assert remaining == ["keep"]
+
+
+def test_delete_events_empty_list_is_noop(tmp_path):
+    db = tmp_path / "test.db"
+    insert_event(_make_event(request_id="r"), db_path=db)
+    assert delete_events([], db_path=db) == 0
+    assert len(export_all(db_path=db)) == 1
+
+
+def test_delete_events_chunks_above_sqlite_var_limit(tmp_path):
+    # Push past the conservative 500-id chunk size to exercise the loop.
+    db = tmp_path / "test.db"
+    ids = [f"r{i}" for i in range(1200)]
+    for rid in ids:
+        insert_event(_make_event(request_id=rid), db_path=db)
+    deleted = delete_events(ids, db_path=db)
+    assert deleted == 1200
+    assert export_all(db_path=db) == []
+
+
+def test_events_for_customer_stable_tiebreaker_on_timestamp_tie(tmp_path):
+    # Same timestamp on multiple rows must produce a stable ordering across
+    # runs so customer set-calls deletes the same request IDs each time.
+    db = tmp_path / "test.db"
+    same_ts = "2026-01-01T00:00:00+00:00"
+    for rid in ("e3", "e1", "e2"):
+        e = _make_event(request_id=rid, customer="acme")
+        e["timestamp"] = same_ts
+        insert_event(e, db_path=db)
+    order_a = [r["request_id"] for r in events_for_customer("acme", db_path=db)]
+    order_b = [r["request_id"] for r in events_for_customer("acme", db_path=db)]
+    assert order_a == order_b
+    # Insertion order via rowid: e3 (first), then e1, then e2.
+    assert order_a == ["e3", "e1", "e2"]

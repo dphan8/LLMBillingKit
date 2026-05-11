@@ -7,6 +7,22 @@ and this project adheres to Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-10
+
+### Added
+
+- `llmbilling add --calls N` creates N equivalent usage events in one command
+  (each with its own UUID). `--calls` defaults to 1 and rejects `--request-id`
+  when greater than 1.
+- `llmbilling customer set-calls` adjusts how many events a customer has —
+  increasing clones the existing event shape, decreasing deletes the
+  most-recent matching events while preserving the oldest history. Requires a
+  full shape filter (`--model`, `--input-tokens`, `--output-tokens`,
+  `--charged`) when the customer has events of multiple shapes or does not
+  exist yet. Destructive deletes prompt for confirmation unless `--yes` is
+  passed.
+- `events_for_customer()` and `delete_events()` helpers in `db.py`.
+
 ## [0.1.1] - 2026-05-10
 
 ### Added

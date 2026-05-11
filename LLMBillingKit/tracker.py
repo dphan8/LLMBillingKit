@@ -11,6 +11,47 @@ class TrackingError(ValueError):
     """Raised when an event cannot be tracked and ``raise_errors`` is enabled."""
 
 
+def build_event(
+    *,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    charged: float,
+    customer: str = "default",
+    request_id: str | None = None,
+    timestamp: str | None = None,
+) -> dict:
+    """Build (but do not persist) a tracked-event dict.
+
+    Resolves model aliases, computes ``actual_cost`` and ``margin``, and
+    fills in a UUID/timestamp when the caller doesn't supply one. Raises
+    :class:`TrackingError` when the model is missing or unpriced — callers
+    that need the silent-None style should wrap with :func:`track_usage`.
+    """
+    if not model:
+        raise TrackingError("Missing model name.")
+
+    canonical = resolve_model(model)
+    if canonical is None:
+        raise TrackingError(f"Unknown model pricing: {model!r}")
+
+    cost_info = _load()[canonical]
+    actual_cost = (input_tokens * cost_info["input"]) + (output_tokens * cost_info["output"])
+    margin = charged - actual_cost
+
+    return {
+        "request_id": request_id or str(uuid.uuid4()),
+        "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
+        "customer": customer,
+        "model": canonical,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "actual_cost": round(actual_cost, 10),
+        "charged": charged,
+        "margin": round(margin, 10),
+    }
+
+
 def track_usage(
     *,
     model: str,
@@ -31,29 +72,15 @@ def track_usage(
     instead.
     """
     try:
-        if not model:
-            raise TrackingError("Missing model name.")
-
-        canonical = resolve_model(model)
-        if canonical is None:
-            raise TrackingError(f"Unknown model pricing: {model!r}")
-
-        cost_info = _load()[canonical]
-        actual_cost = (input_tokens * cost_info["input"]) + (output_tokens * cost_info["output"])
-        margin = charged - actual_cost
-
-        event = {
-            "request_id": request_id or str(uuid.uuid4()),
-            "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
-            "customer": customer,
-            "model": canonical,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "actual_cost": round(actual_cost, 10),
-            "charged": charged,
-            "margin": round(margin, 10),
-        }
-
+        event = build_event(
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            charged=charged,
+            customer=customer,
+            request_id=request_id,
+            timestamp=timestamp,
+        )
         insert_event(event)
         return event
 
